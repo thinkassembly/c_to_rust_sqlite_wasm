@@ -85,7 +85,7 @@ impl Connection {
         read_only: bool,
     ) -> Result<Blob<'a>> {
         let mut c = self.db.borrow_mut();
-        let mut blob = ptr::null_mut();
+        let mut blob  = ptr::null_mut();
         let db = db.to_cstring()?;
         let table = super::str_to_cstring(table)?;
         let column = super::str_to_cstring(column)?;
@@ -102,7 +102,7 @@ impl Connection {
         };
         c.decode_result(rc).map(|_| Blob {
             conn: self,
-            blob,
+            blob:blob as *mut libsqlite3_sys::sqlite3_blob,
             pos: 0,
         })
     }

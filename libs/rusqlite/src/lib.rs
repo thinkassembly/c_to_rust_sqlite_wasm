@@ -806,7 +806,7 @@ impl fmt::Debug for Connection {
 
 bitflags::bitflags! {
     #[doc = "Flags for opening SQLite database connections."]
-    #[doc = "See [sqlite3_open_v2](http://www.sqlite.org/c3ref/open.html) for details."]
+    #[doc = "See [sqlite3_open](http://www.sqlite.org/c3ref/open.html) for details."]
     #[repr(C)]
     pub struct OpenFlags: ::std::os::raw::c_int {
         const SQLITE_OPEN_READ_ONLY     = ffi::SQLITE_OPEN_READONLY;

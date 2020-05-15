@@ -1,6 +1,8 @@
 // Types (the libc crate doesn't yet support wasm32-unknown-unknown)
 #[allow(non_camel_case_types)]
 pub type c_float = f32;
+pub type uintptr_t = i32;
+pub type intptr_t = i32;
 
 use wasm_bindgen::JsCast;
 
@@ -432,8 +434,9 @@ extern {
 use wasm_bindgen::prelude::*;
 use js_sys::Math::ceil;
 use std::ffi::CStr;
-use std::os::raw::{c_char, c_int};
-use wasm_bindgen::__rt::std::os::raw::c_long;
+pub use std::os::raw::{c_char, c_int,c_uchar,c_void,c_longlong,c_ulonglong,c_ulong,c_uint,c_double,c_schar,c_short,c_ushort};
+
+pub use wasm_bindgen::__rt::std::os::raw::c_long;
 
 #[wasm_bindgen(module = "/js/libc.js")]
 extern "C" {}

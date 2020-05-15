@@ -7,6 +7,7 @@ use std::slice;
 
 use crate::ffi;
 use crate::{str_to_cstring, Connection, InnerConnection, Result};
+use wasm_bindgen::__rt::std::panic::AssertUnwindSafe;
 
 // FIXME copy/paste from function.rs
 unsafe extern "C" fn free_boxed_value<T>(p: *mut c_void) {
@@ -55,7 +56,7 @@ impl InnerConnection {
         {
             use std::str;
 
-            let r = catch_unwind(|| {
+            let r = catch_unwind(AssertUnwindSafe(|| {
                 let boxed_f: *mut C = arg1 as *mut C;
                 assert!(!boxed_f.is_null(), "Internal error - null function pointer");
                 let s1 = {
@@ -67,7 +68,7 @@ impl InnerConnection {
                     str::from_utf8_unchecked(c_slice)
                 };
                 (*boxed_f)(s1, s2)
-            });
+            }));
             let t = match r {
                 Err(_) => {
                     return -1; // FIXME How ?
@@ -118,14 +119,14 @@ impl InnerConnection {
             }
 
             let callback: fn(&Connection, &str) -> Result<()> = mem::transmute(arg1);
-            if catch_unwind(|| {
+            if catch_unwind(AssertUnwindSafe(|| {
                 let conn = Connection::from_handle(arg2).unwrap();
                 let collation_name = {
                     let c_slice = CStr::from_ptr(arg3).to_bytes();
                     str::from_utf8_unchecked(c_slice)
                 };
                 callback(&conn, collation_name)
-            })
+            }))
             .is_err()
             {
                 return; // FIXME How ?

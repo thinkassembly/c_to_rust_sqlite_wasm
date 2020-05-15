@@ -6,8 +6,31 @@ extern crate rusqlite;
 
 use rusqlite::{params, Connection};
 
-extern crate libc_sys;
+/*extern crate libc_sys;*/
+/*
+#[no_mangle]
+pub extern "C" fn malloc(size: usize) -> *mut c_void {
 
+    unsafe { 0 as *mut c_void }
+}
+
+#[no_mangle]
+pub extern "C" fn free(ptr: *mut c_void) {
+
+}
+
+#[no_mangle]
+pub extern "C" fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void {
+    unsafe { ptr as *mut c_void }
+}
+*/
+
+extern crate wee_alloc;
+
+//wee_alloc_malloc::define_malloc!(std::alloc::System,std::alloc::System);
+// Use `wee_alloc` as the global allocator.
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern crate js_sys;
 #[cfg(test)]
@@ -30,24 +53,26 @@ pub fn start() {
 
     match Connection::open_in_memory() {
         Ok(conn) => {
-            println!("Creating TABLE: person
+            println!(
+                "Creating TABLE: person
             CREATE TABLE person (
                           id              INTEGER PRIMARY KEY,
                           name            TEXT NOT NULL,
                           time_created    INTEGER NOT NULL,
                           data            BLOB
-                          )");
+                          )"
+            );
             println!();
             conn.execute(
                 "CREATE TABLE person (
-                          id              INTEGER PRIMARY KEY,
+                          id              INTEGER PRIMARY KEY),
                           name            TEXT NOT NULL,
                           time_created    INTEGER NOT NULL,
                            data            BLOB
                            )",
                 params![],
-            ).expect("CREATE TABLE statement did not execute.");
-
+            )
+            .expect("CREATE TABLE statement did not execute.");
 
             let me = Person {
                 id: 0,
@@ -55,8 +80,10 @@ pub fn start() {
                 time_created: js_sys::Date::new_0().value_of(),
                 data: None,
             };
-            println!("Inserting into TABLE: \
-            INSERT INTO person(name,time_created,data) VALUES (?1, ?2, ?3,?4)");
+            println!(
+                "Inserting into TABLE: \
+            INSERT INTO person(name,time_created,data) VALUES (?1, ?2, ?3,?4)"
+            );
 
             for i in 0..10 {
                 conn.execute(
@@ -65,13 +92,16 @@ pub fn start() {
                     params![
                         i,
                         me.name.clone() + &i.to_string().clone(),
-                       js_sys::Date::new_0().value_of(),
+                        js_sys::Date::new_0().value_of(),
                         me.data
                     ],
-                ).expect("Error inserting record.");
+                )
+                .expect("Error inserting record.");
             }
-            println!("Querying person table : \
-            SELECT id,name,time_created,data FROM person");
+            println!(
+                "Querying person table : \
+            SELECT id,name,time_created,data FROM person"
+            );
             let mut stmt = conn
                 .prepare("SELECT id, name, time_created, data FROM person")
                 .expect("Error preparing statement.");
@@ -99,14 +129,29 @@ pub fn start() {
 
 use rusqlite::ffi;
 
-extern crate wasm_bindgen_test;
-extern crate libsqlite3_sys;
-extern crate fallible_streaming_iterator;
-extern crate unicase;
 extern crate chrono;
+extern crate fallible_streaming_iterator;
+extern crate libsqlite3_sys;
+extern crate unicase;
+extern crate wasm_bindgen_test;
 
+use std::ffi::c_void;
 use wasm_bindgen_test::*;
+#[test]
+fn test_error_when_singlethread_mode() {
+    // put SQLite into single-threaded mode
+    unsafe {
+        if ffi::sqlite3_config(ffi::SQLITE_CONFIG_SINGLETHREAD) != ffi::SQLITE_OK {
+            return;
+        }
+        if ffi::sqlite3_initialize() != ffi::SQLITE_OK {
+            return;
+        }
+    }
 
+    let _ = Connection::open_in_memory().unwrap();
+}
+/*
 #[wasm_bindgen_test]
 fn test_error_when_singlethread_mode() {
     // put SQLite into single-threaded mode
@@ -121,8 +166,7 @@ fn test_error_when_singlethread_mode() {
 
     let _ = Connection::open_in_memory().unwrap();
 }
-
-
+*/
 #[wasm_bindgen_test]
 fn test_dummy_module() {
     use rusqlite::types::ToSql;
@@ -222,11 +266,10 @@ fn test_dummy_module() {
     assert_eq!(1, dummy);
 }
 
-
 #[cfg(test)]
 mod test {
-    use rusqlite::*;
     use rusqlite::ffi;
+    use rusqlite::*;
 
     extern crate fallible_iterator;
 
@@ -252,103 +295,108 @@ mod test {
     pub fn checked_memory_handle() -> Connection {
         Connection::open_in_memory().unwrap()
     }
-/*
-    #[wasm_bindgen_test]
-    fn test_concurrent_transactions_busy_commit() {
-        use std::time::Duration;
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("transactions.db3");
-
-        Connection::open(&path)
-            .expect("create temp db")
-            .execute_batch(
-                "
-            BEGIN; CREATE TABLE foo(x INTEGER);
-            INSERT INTO foo VALUES(42); END;",
-            )
-            .expect("create temp db");
-
-        let mut db1 =
-            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
-        let mut db2 = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
-
-        db1.busy_timeout(Duration::from_millis(0)).unwrap();
-        db2.busy_timeout(Duration::from_millis(0)).unwrap();
-
-        {
-            let tx1 = db1.transaction().unwrap();
-            let tx2 = db2.transaction().unwrap();
-
-            // SELECT first makes sqlite lock with a shared lock
-            tx1.query_row("SELECT x FROM foo LIMIT 1", NO_PARAMS, |_| Ok(()))
-                .unwrap();
-            tx2.query_row("SELECT x FROM foo LIMIT 1", NO_PARAMS, |_| Ok(()))
-                .unwrap();
-
-            tx1.execute("INSERT INTO foo VALUES(?1)", &[1]).unwrap();
-            let _ = tx2.execute("INSERT INTO foo VALUES(?1)", &[2]);
-
-            let _ = tx1.commit();
-            let _ = tx2.commit();
-        }
-
-        let _ = db1
-            .transaction()
-            .expect("commit should have closed transaction");
-        let _ = db2
-            .transaction()
-            .expect("commit should have closed transaction");
-    }
-*/
     /*
-    #[wasm_bindgen_test]
-    fn test_persistence() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("test.db3");
+        #[wasm_bindgen_test]
+        fn test_concurrent_transactions_busy_commit() {
+            use std::time::Duration;
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join("transactions.db3");
 
-        {
-            let db = Connection::open(&path).unwrap();
-            let sql = "BEGIN;
-                   CREATE TABLE foo(x INTEGER);
-                   INSERT INTO foo VALUES(42);
-                   END;";
-            db.execute_batch(sql).unwrap();
+            Connection::open(&path)
+                .expect("create temp db")
+                .execute_batch(
+                    "
+                BEGIN; CREATE TABLE foo(x INTEGER);
+                INSERT INTO foo VALUES(42); END;",
+                )
+                .expect("create temp db");
+
+            let mut db1 =
+                Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+            let mut db2 = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+
+            db1.busy_timeout(Duration::from_millis(0)).unwrap();
+            db2.busy_timeout(Duration::from_millis(0)).unwrap();
+
+            {
+                let tx1 = db1.transaction().unwrap();
+                let tx2 = db2.transaction().unwrap();
+
+                // SELECT first makes sqlite lock with a shared lock
+                tx1.query_row("SELECT x FROM foo LIMIT 1", NO_PARAMS, |_| Ok(()))
+                    .unwrap();
+                tx2.query_row("SELECT x FROM foo LIMIT 1", NO_PARAMS, |_| Ok(()))
+                    .unwrap();
+
+                tx1.execute("INSERT INTO foo VALUES(?1)", &[1]).unwrap();
+                let _ = tx2.execute("INSERT INTO foo VALUES(?1)", &[2]);
+
+                let _ = tx1.commit();
+                let _ = tx2.commit();
+            }
+
+            let _ = db1
+                .transaction()
+                .expect("commit should have closed transaction");
+            let _ = db2
+                .transaction()
+                .expect("commit should have closed transaction");
         }
+    */
+    /*
+        #[wasm_bindgen_test]
+        fn test_persistence() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let path = temp_dir.path().join("test.db3");
 
-        let path_string = path.to_str().unwrap();
-        let db = Connection::open(&path_string).unwrap();
-        let the_answer: Result<i64> = db.query_row("SELECT x FROM foo", NO_PARAMS, |r| r.get(0));
+            {
+                let db = Connection::open(&path).unwrap();
+                let sql = "BEGIN;
+                       CREATE TABLE foo(x INTEGER);
+                       INSERT INTO foo VALUES(42);
+                       END;";
+                db.execute_batch(sql).unwrap();
+            }
 
-        assert_eq!(42i64, the_answer.unwrap());
-    }
-*/
+            let path_string = path.to_str().unwrap();
+            let db = Connection::open(&path_string).unwrap();
+            let the_answer: Result<i64> = db.query_row("SELECT x FROM foo", NO_PARAMS, |r| r.get(0));
+
+            assert_eq!(42i64, the_answer.unwrap());
+        }
+    */
     #[wasm_bindgen_test]
     fn test_open() {
         assert!(Connection::open_in_memory().is_ok());
 
         let db = checked_memory_handle();
+
         assert!(db.close().is_ok());
     }
 
-    #[wasm_bindgen_test]
-    fn test_open_failure() {
-        let filename = "no_such_file.db";
-        let result = Connection::open_with_flags(filename, OpenFlags::SQLITE_OPEN_READ_ONLY);
-        assert!(!result.is_ok());
-        let err = result.err().unwrap();
-        if let Error::SqliteFailure(e, Some(msg)) = err {
-            assert_eq!(ErrorCode::CannotOpen, e.code);
-            assert_eq!(ffi::SQLITE_CANTOPEN, e.extended_code);
-            assert!(
-                msg.contains(filename),
-                "error message '{}' does not contain '{}'",
-                msg,
-                filename
-            );
-        } else {
-            panic!("SqliteFailure expected");
-        }
-    }
+    /*
+     TODO: Probably just remove this test, no disk io means no failure.
+     #[wasm_bindgen_test]
+     fn test_open_failure() {
+         let filename = "no_such_file.db";
+         let result = Connection::open_with_flags(filename, OpenFlags::SQLITE_OPEN_READ_ONLY);
+         assert!(!result.is_ok());
+         let err = result.err().unwrap();
+         if let Error::SqliteFailure(e, Some(msg)) = err {
+             assert_eq!(ErrorCode::CannotOpen, e.code);
+             assert_eq!(ffi::SQLITE_CANTOPEN, e.extended_code);
+             assert!(
+                 msg.contains(filename),
+                 "error message '{}' does not contain '{}'",
+                 msg,
+                 filename
+             );
+         } else {
+             panic!("SqliteFailure expected");
+         }
+     }
+
+    */
 
     #[wasm_bindgen_test]
     fn test_close_retry() {
@@ -546,10 +594,10 @@ mod test {
         let db = checked_memory_handle();
         let sql = "BEGIN;
                    CREATE TABLE foo(x INTEGER, y TEXT);
-                   INSERT INTO foo VALUES(4, \"hello\");
-                   INSERT INTO foo VALUES(3, \", \");
-                   INSERT INTO foo VALUES(2, \"world\");
-                   INSERT INTO foo VALUES(1, \"!\");
+                   INSERT INTO foo VALUES(4, 'hello');
+                   INSERT INTO foo VALUES(3, ', ');
+                   INSERT INTO foo VALUES(2, 'world');
+                   INSERT INTO foo VALUES(1, '!');
                    END;";
         db.execute_batch(sql).unwrap();
 
@@ -617,22 +665,22 @@ mod test {
         assert!(bad_query_result.is_err());
     }
 
-    #[wasm_bindgen_test]
-    fn test_pragma_query_row() {
-        let db = checked_memory_handle();
+    /*  #[wasm_bindgen_test]
+        fn test_pragma_query_row() {
+            let db = checked_memory_handle();
 
-        assert_eq!(
-            "memory",
-            db.query_row::<String, _, _>("PRAGMA journal_mode", NO_PARAMS, |r| r.get(0))
-                .unwrap()
-        );
-        assert_eq!(
-            "off",
-            db.query_row::<String, _, _>("PRAGMA journal_mode=off", NO_PARAMS, |r| r.get(0))
-                .unwrap()
-        );
-    }
-
+            assert_eq!(
+                "memory",
+                db.query_row::<String, _, _>("PRAGMA journal_mode", NO_PARAMS, |r| r.get(0))
+                    .unwrap()
+            );
+            assert_eq!(
+                "off",
+                db.query_row::<String, _, _>("PRAGMA journal_mode=off", NO_PARAMS, |r| r.get(0))
+                    .unwrap()
+            );
+        }
+    */
     #[wasm_bindgen_test]
     fn test_prepare_failures() {
         let db = checked_memory_handle();
@@ -742,7 +790,7 @@ mod test {
                 Ok(0)
             },
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db
             .prepare("SELECT interrupt() FROM (SELECT 1 UNION SELECT 2 UNION SELECT 3)")
@@ -853,10 +901,10 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
-                       INSERT INTO foo VALUES(3, \", \");
-                       INSERT INTO foo VALUES(2, \"world\");
-                       INSERT INTO foo VALUES(1, \"!\");
+                       INSERT INTO foo VALUES(4, 'hello');
+                       INSERT INTO foo VALUES(3, ', ');
+                       INSERT INTO foo VALUES(2, 'world');
+                       INSERT INTO foo VALUES(1, '!');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -874,10 +922,10 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
-                       INSERT INTO foo VALUES(3, \", \");
-                       INSERT INTO foo VALUES(2, \"world\");
-                       INSERT INTO foo VALUES(1, \"!\");
+                       INSERT INTO foo VALUES(4, 'hello');
+                       INSERT INTO foo VALUES(3, ', ');
+                       INSERT INTO foo VALUES(2, 'world');
+                       INSERT INTO foo VALUES(1, '!');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -908,10 +956,10 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
-                       INSERT INTO foo VALUES(3, \", \");
-                       INSERT INTO foo VALUES(2, \"world\");
-                       INSERT INTO foo VALUES(1, \"!\");
+                       INSERT INTO foo VALUES(4, 'hello');
+                       INSERT INTO foo VALUES(3, ', ');
+                       INSERT INTO foo VALUES(2, 'world');
+                       INSERT INTO foo VALUES(1, '!');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -929,10 +977,10 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
-                       INSERT INTO foo VALUES(3, \", \");
-                       INSERT INTO foo VALUES(2, \"world\");
-                       INSERT INTO foo VALUES(1, \"!\");
+                       INSERT INTO foo VALUES(4, 'hello');
+                       INSERT INTO foo VALUES(3, ', ');
+                       INSERT INTO foo VALUES(2, 'world');
+                       INSERT INTO foo VALUES(1, '!');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -973,7 +1021,7 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
+                       INSERT INTO foo VALUES(4, 'hello');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -990,7 +1038,7 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
+                       INSERT INTO foo VALUES(4, 'hello');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -1027,7 +1075,7 @@ mod test {
             let db = checked_memory_handle();
             let sql = "BEGIN;
                        CREATE TABLE foo(x INTEGER, y TEXT);
-                       INSERT INTO foo VALUES(4, \"hello\");
+                       INSERT INTO foo VALUES(4, 'hello');
                        END;";
             db.execute_batch(sql).unwrap();
 
@@ -1035,7 +1083,7 @@ mod test {
                 assert_eq!(2, r.column_count());
                 Ok(())
             })
-                .unwrap();
+            .unwrap();
         }
 
         #[wasm_bindgen_test]
@@ -1048,7 +1096,7 @@ mod test {
                 assert_eq!(5, r.get_unwrap::<_, i32>(0));
                 Ok(())
             })
-                .unwrap();
+            .unwrap();
         }
 
         #[wasm_bindgen_test]
@@ -1069,7 +1117,7 @@ mod test {
                     Ok(())
                 },
             )
-                .unwrap();
+            .unwrap();
         }
 
         #[wasm_bindgen_test]
@@ -1222,30 +1270,29 @@ mod test {
     }
 
     use std::sync::atomic::{AtomicBool, Ordering};
-    use std::time::Duration;
 
-    use rusqlite::{Error, ErrorCode,  NO_PARAMS};
-/*
-    #[wasm_bindgen_test]
-    fn test_default_busy() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let path = temp_dir.path().join("test.db3");
+    use rusqlite::{Error, ErrorCode, NO_PARAMS};
+    /*
+        #[wasm_bindgen_test]
+        fn test_default_busy() {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let path = temp_dir.path().join("test.db3");
 
-        let mut db1 = Connection::open(&path).unwrap();
-        let tx1 = db1
-            .transaction_with_behavior(TransactionBehavior::Exclusive)
-            .unwrap();
-        let db2 = Connection::open(&path).unwrap();
-        let r: Result<()> = db2.query_row("PRAGMA schema_version", NO_PARAMS, |_| unreachable!());
-        match r.unwrap_err() {
-            Error::SqliteFailure(err, _) => {
-                assert_eq!(err.code, ErrorCode::DatabaseBusy);
+            let mut db1 = Connection::open(&path).unwrap();
+            let tx1 = db1
+                .transaction_with_behavior(TransactionBehavior::Exclusive)
+                .unwrap();
+            let db2 = Connection::open(&path).unwrap();
+            let r: Result<()> = db2.query_row("PRAGMA schema_version", NO_PARAMS, |_| unreachable!());
+            match r.unwrap_err() {
+                Error::SqliteFailure(err, _) => {
+                    assert_eq!(err.code, ErrorCode::DatabaseBusy);
+                }
+                err => panic!("Unexpected error {}", err),
             }
-            err => panic!("Unexpected error {}", err),
+            tx1.rollback().unwrap();
         }
-        tx1.rollback().unwrap();
-    }
-*/
+    */
 
     use rusqlite::StatementCache;
 
@@ -1373,7 +1420,7 @@ mod test {
             INSERT INTO foo VALUES (1);
         "#,
         )
-            .unwrap();
+        .unwrap();
 
         let sql = "SELECT * FROM foo";
 
@@ -1391,7 +1438,7 @@ mod test {
             UPDATE foo SET y = 2;
         "#,
         )
-            .unwrap();
+        .unwrap();
 
         {
             let mut stmt = db.prepare_cached(sql).unwrap();
@@ -1451,7 +1498,6 @@ mod test {
     use fallible_streaming_iterator::FallibleStreamingIterator;
     use unicase::UniCase;
 
-
     fn unicase_compare(s1: &str, s2: &str) -> std::cmp::Ordering {
         UniCase::new(s1).cmp(&UniCase::new(s2))
     }
@@ -1471,7 +1517,7 @@ mod test {
              INSERT INTO foo (bar) VALUES ('Maße');
              INSERT INTO foo (bar) VALUES ('MASSE');",
         )
-            .unwrap();
+        .unwrap();
         let mut stmt = db
             .prepare("SELECT DISTINCT bar COLLATE unicase FROM foo ORDER BY 1")
             .unwrap();
@@ -1496,7 +1542,6 @@ mod test {
 
     use rusqlite::Column;
 
-
     #[wasm_bindgen_test]
     fn test_columns() {
         let db = Connection::open_in_memory().unwrap();
@@ -1510,7 +1555,7 @@ mod test {
         let column_types: Vec<Option<&str>> = columns.iter().map(Column::decl_type).collect();
         assert_eq!(
             &column_types[..3],
-            &[Some("text"), Some("text"), Some("text"), ]
+            &[Some("text"), Some("text"), Some("text"),]
         );
     }
 
@@ -1524,7 +1569,7 @@ mod test {
              INSERT INTO foo VALUES(4, NULL);
              END;",
         )
-            .unwrap();
+        .unwrap();
         let mut stmt = db.prepare("SELECT x as renamed, y FROM foo").unwrap();
         let mut rows = stmt.query(rusqlite::NO_PARAMS).unwrap();
         let row = rows.next().unwrap().unwrap();
@@ -1550,9 +1595,7 @@ mod test {
         }
     }
 
-
     use rusqlite::config::DbConfig;
-
 
     #[wasm_bindgen_test]
     fn test_db_config() {
@@ -1586,10 +1629,10 @@ mod test {
     use std::f64::EPSILON;
     use std::os::raw::{c_double, c_int};
 
+    use self::regex::Regex;
     #[cfg(feature = "window")]
     use rusqlite::functions::WindowAggregate;
     use rusqlite::functions::{Aggregate, Context, FunctionFlags};
-    use self::regex::Regex;
 
     fn half(ctx: &Context<'_>) -> Result<c_double> {
         assert_eq!(ctx.len(), 1, "called with unexpected number of arguments");
@@ -1606,7 +1649,7 @@ mod test {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             half,
         )
-            .unwrap();
+        .unwrap();
         let result: Result<f64> = db.query_row("SELECT half(6)", NO_PARAMS, |r| r.get(0));
 
         assert!((3f64 - result.unwrap()).abs() < EPSILON);
@@ -1621,7 +1664,7 @@ mod test {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             half,
         )
-            .unwrap();
+        .unwrap();
         let result: Result<f64> = db.query_row("SELECT half(6)", NO_PARAMS, |r| r.get(0));
         assert!((3f64 - result.unwrap()).abs() < EPSILON);
 
@@ -1677,14 +1720,14 @@ mod test {
              INSERT INTO foo VALUES ('lisX');
              END;",
         )
-            .unwrap();
+        .unwrap();
         db.create_scalar_function(
             "regexp",
             2,
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             regexp_with_auxilliary,
         )
-            .unwrap();
+        .unwrap();
 
         let result: Result<bool> =
             db.query_row("SELECT regexp('l.s[aeiouy]', 'lisa')", NO_PARAMS, |r| {
@@ -1720,7 +1763,7 @@ mod test {
                 Ok(ret)
             },
         )
-            .unwrap();
+        .unwrap();
 
         for &(expected, query) in &[
             ("", "SELECT my_concat()"),
@@ -1744,7 +1787,7 @@ mod test {
             }
             Ok(true)
         })
-            .unwrap();
+        .unwrap();
 
         let res: bool = db
             .query_row(
@@ -1800,7 +1843,7 @@ mod test {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             Sum,
         )
-            .unwrap();
+        .unwrap();
 
         // sum should return NULL when given no columns (contrast with count below)
         let no_result = "SELECT my_sum(i) FROM (SELECT 2 AS i WHERE 1 <> 1)";
@@ -1828,7 +1871,7 @@ mod test {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             Count,
         )
-            .unwrap();
+        .unwrap();
 
         // count should return 0 when given no columns (contrast with sum above)
         let no_result = "SELECT my_count(i) FROM (SELECT 2 AS i WHERE 1 <> 1)";
@@ -1864,7 +1907,7 @@ mod test {
             FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
             Sum,
         )
-            .unwrap();
+        .unwrap();
         db.execute_batch(
             "CREATE TABLE t3(x, y);
              INSERT INTO t3 VALUES('a', 4),
@@ -1873,7 +1916,7 @@ mod test {
                      ('d', 8),
                      ('e', 1);",
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db
             .prepare(
@@ -1901,7 +1944,6 @@ mod test {
     }
 
     use rusqlite::Action;
-
 
     #[wasm_bindgen_test]
     fn test_commit_hook() {
@@ -1968,7 +2010,6 @@ mod test {
 
     use rusqlite::ffi::Limit;
 
-
     #[wasm_bindgen_test]
     fn test_limit() {
         let db = Connection::open_in_memory().unwrap();
@@ -2004,7 +2045,7 @@ mod test {
             db.set_limit(Limit::SQLITE_LIMIT_TRIGGER_DEPTH, 32);
             assert_eq!(32, db.limit(Limit::SQLITE_LIMIT_TRIGGER_DEPTH));
         }
-/*
+        /*
         // SQLITE_LIMIT_WORKER_THREADS was added in SQLite 3.8.7.
         if rusqlite::version_number() >= 3_008_007 {
             db.set_limit(Limit::SQLITE_LIMIT_WORKER_THREADS, 2);
@@ -2013,9 +2054,8 @@ mod test {
         */
     }
 
-    use rusqlite::pragma::Sql;
     use rusqlite::pragma;
-
+    use rusqlite::pragma::Sql;
 
     #[wasm_bindgen_test]
     fn pragma_query_value() {
@@ -2049,7 +2089,7 @@ mod test {
             user_version = row.get(0)?;
             Ok(())
         })
-            .unwrap();
+        .unwrap();
         assert_eq!(0, user_version);
     }
 
@@ -2061,7 +2101,7 @@ mod test {
             user_version = row.get(0)?;
             Ok(())
         })
-            .unwrap();
+        .unwrap();
         assert_eq!(0, user_version);
     }
 
@@ -2074,7 +2114,7 @@ mod test {
             columns.push(column);
             Ok(())
         })
-            .unwrap();
+        .unwrap();
         assert_eq!(5, columns.len());
     }
 
@@ -2099,15 +2139,15 @@ mod test {
         db.pragma_update(None, "user_version", &1).unwrap();
     }
 
-    #[wasm_bindgen_test]
-    fn pragma_update_and_check() {
-        let db = Connection::open_in_memory().unwrap();
-        let journal_mode: String = db
-            .pragma_update_and_check(None, "journal_mode", &"OFF", |row| row.get(0))
-            .unwrap();
-        assert_eq!("off", &journal_mode);
-    }
-
+    /* #[wasm_bindgen_test]
+        fn pragma_update_and_check() {
+            let db = Connection::open_in_memory().unwrap();
+            let journal_mode: String = db
+                .pragma_update_and_check(None, "journal_mode", &"OFF", |row| row.get(0))
+                .unwrap();
+            assert_eq!("off", &journal_mode);
+        }
+    */
     #[wasm_bindgen_test]
     fn is_identifier() {
         assert!(pragma::is_identifier("full"));
@@ -2130,7 +2170,7 @@ mod test {
         assert_eq!("'value''; --'", sql.as_str());
     }
 
-    use rusqlite::types::{ToSql, Value, FromSql};
+    use rusqlite::types::{FromSql, ToSql, Value};
 
     #[wasm_bindgen_test]
     fn test_execute_named() {
@@ -2155,7 +2195,7 @@ mod test {
                 &[(":x", &0i32)],
                 |r| r.get(0),
             )
-                .unwrap()
+            .unwrap()
         );
     }
 
@@ -2186,7 +2226,7 @@ mod test {
         let db = Connection::open_in_memory().unwrap();
         let sql = r#"
         CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
-        INSERT INTO test(id, name) VALUES (1, "one");
+        INSERT INTO test(id, name) VALUES (1, 'one');
         "#;
         db.execute_batch(sql).unwrap();
 
@@ -2204,7 +2244,7 @@ mod test {
         let db = Connection::open_in_memory().unwrap();
         let sql = r#"
         CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
-        INSERT INTO test(id, name) VALUES (1, "one");
+        INSERT INTO test(id, name) VALUES (1, 'one');
         "#;
         db.execute_batch(sql).unwrap();
 
@@ -2227,8 +2267,8 @@ mod test {
         let db = Connection::open_in_memory().unwrap();
         let sql = r#"
         CREATE TABLE test (id INTEGER PRIMARY KEY NOT NULL, name TEXT NOT NULL, flag INTEGER);
-        INSERT INTO test(id, name) VALUES (1, "one");
-        INSERT INTO test(id, name) VALUES (2, "one");
+        INSERT INTO test(id, name) VALUES (1, 'one');
+        INSERT INTO test(id, name) VALUES (2, 'one');
         "#;
         db.execute_batch(sql).unwrap();
 
@@ -2331,7 +2371,7 @@ mod test {
             CREATE TABLE bar(x INTEGER);
         ",
         )
-            .unwrap();
+        .unwrap();
 
         assert_eq!(
             db.prepare("INSERT INTO foo VALUES (10)")
@@ -2404,13 +2444,13 @@ mod test {
         assert_eq!(3i64, y.unwrap());
     }
 
-    #[wasm_bindgen_test]
+    /*  #[wasm_bindgen_test]
     fn test_expanded_sql() {
         let db = Connection::open_in_memory().unwrap();
         let stmt = db.prepare("SELECT ?").unwrap();
         stmt.bind_parameter(&1, 1).unwrap();
         assert_eq!(Some("SELECT 1".to_owned()), stmt.expanded_sql());
-    }
+    }*/
 
     #[wasm_bindgen_test]
     fn test_bind_parameters() {
@@ -2421,7 +2461,7 @@ mod test {
             &[&1u8 as &dyn ToSql, &"one", &Some("one")],
             |row| row.get::<_, u8>(0),
         )
-            .unwrap();
+        .unwrap();
         // existing collection:
         let data = vec![1, 2, 3];
         db.query_row("SELECT ?1, ?2, ?3", &data, |row| row.get::<_, u8>(0))
@@ -2429,7 +2469,7 @@ mod test {
         db.query_row("SELECT ?1, ?2, ?3", data.as_slice(), |row| {
             row.get::<_, u8>(0)
         })
-            .unwrap();
+        .unwrap();
         db.query_row("SELECT ?1, ?2, ?3", data, |row| row.get::<_, u8>(0))
             .unwrap();
 
@@ -2477,58 +2517,6 @@ mod test {
         let conn = Connection::open_in_memory().unwrap();
         let stmt = conn.prepare(";").unwrap();
         assert_eq!(0, stmt.column_count());
-    }
-
-    use std::sync::Mutex;
-
-
-    #[wasm_bindgen_test]
-    fn test_trace() {
-        lazy_static! {
-            static ref TRACED_STMTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-        }
-        fn tracer(s: &str) {
-            let mut traced_stmts = TRACED_STMTS.lock().unwrap();
-            traced_stmts.push(s.to_owned());
-        }
-
-        let mut db = Connection::open_in_memory().unwrap();
-        db.trace(Some(tracer));
-        {
-            let _ = db.query_row("SELECT ?", &[1i32], |_| Ok(()));
-            let _ = db.query_row("SELECT ?", &["hello"], |_| Ok(()));
-        }
-        db.trace(None);
-        {
-            let _ = db.query_row("SELECT ?", &[2i32], |_| Ok(()));
-            let _ = db.query_row("SELECT ?", &["goodbye"], |_| Ok(()));
-        }
-
-        let traced_stmts = TRACED_STMTS.lock().unwrap();
-        assert_eq!(traced_stmts.len(), 2);
-        assert_eq!(traced_stmts[0], "SELECT 1");
-        assert_eq!(traced_stmts[1], "SELECT 'hello'");
-    }
-
-    #[wasm_bindgen_test]
-    fn test_profile() {
-        lazy_static! {
-            static ref PROFILED: Mutex<Vec<(String, Duration)>> = Mutex::new(Vec::new());
-        }
-        fn profiler(s: &str, d: Duration) {
-            let mut profiled = PROFILED.lock().unwrap();
-            profiled.push((s.to_owned(), d));
-        }
-
-        let mut db = Connection::open_in_memory().unwrap();
-        db.profile(Some(profiler));
-        db.execute_batch("PRAGMA application_id = 1").unwrap();
-        db.profile(None);
-        db.execute_batch("PRAGMA application_id = 2").unwrap();
-
-        let profiled = PROFILED.lock().unwrap();
-        assert_eq!(profiled.len(), 1);
-        assert_eq!(profiled[0].0, "PRAGMA application_id = 1");
     }
 
     use rusqlite::DropBehavior;
@@ -2697,7 +2685,6 @@ mod test {
         assert_eq!(x, i);
     }
 
-
     fn checked_memory_handlexx() -> Connection {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE TABLE foo (b BLOB, t TEXT, i INTEGER, f FLOAT, n)")
@@ -2822,7 +2809,7 @@ mod test {
             "INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)",
             NO_PARAMS,
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo").unwrap();
         let mut rows = stmt.query(NO_PARAMS).unwrap();
@@ -2856,8 +2843,8 @@ mod test {
         ));
         // need to sort out time lib
         /*assert!(is_invalid_column_type(
-    row.get::<_, time::Timespec>(0).err().unwrap()
-));*/
+            row.get::<_, time::Timespec>(0).err().unwrap()
+        ));*/
         assert!(is_invalid_column_type(
             row.get::<_, Option<c_int>>(0).err().unwrap()
         ));
@@ -2932,7 +2919,7 @@ mod test {
             "INSERT INTO foo(b, t, i, f) VALUES (X'0102', 'text', 1, 1.5)",
             NO_PARAMS,
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db.prepare("SELECT b, t, i, f, n FROM foo").unwrap();
         let mut rows = stmt.query(NO_PARAMS).unwrap();
@@ -2951,8 +2938,8 @@ mod test {
         assert_eq!(Value::Null, row.get::<_, Value>(4).unwrap());
     }
 
-    use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use self::url::ParseError;
+    use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
     fn checked_memory_handlexxx() -> Connection {
         let db = Connection::open_in_memory().unwrap();
@@ -3101,7 +3088,6 @@ mod test {
         assert!(result.is_ok());
     }
 
-
     fn checked_memory_handle_from_sql() -> Connection {
         Connection::open_in_memory().unwrap()
     }
@@ -3111,8 +3097,8 @@ mod test {
         let db = checked_memory_handle_from_sql();
 
         fn check_ranges<T>(db: &Connection, out_of_range: &[i64], in_range: &[i64])
-            where
-                T: Into<i64> + FromSql + ::std::fmt::Debug,
+        where
+            T: Into<i64> + FromSql + ::std::fmt::Debug,
         {
             for n in out_of_range {
                 let err = db
@@ -3164,7 +3150,7 @@ mod test {
             "INSERT INTO foo (t, b) VALUES (?, ?)",
             &[&data as &dyn ToSql, &json.as_bytes()],
         )
-            .unwrap();
+        .unwrap();
 
         let t: serde_json::Value = db
             .query_row("SELECT t FROM foo", NO_PARAMS, |r| r.get(0))
@@ -3175,7 +3161,6 @@ mod test {
             .unwrap();
         assert_eq!(data, b);
     }
-
 
     fn is_to_sql<T: ToSql>() {}
 
@@ -3219,7 +3204,7 @@ mod test {
                 (?, 'min'), (?, 'max')",
             &[0i128, -1i128, -2i128, 1i128, 2i128, i128::MIN, i128::MAX],
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db
             .prepare("SELECT i128, desc FROM foo ORDER BY i128 ASC")
@@ -3263,7 +3248,7 @@ mod test {
             "INSERT INTO foo (id, label) VALUES (?, ?)",
             params![id, "target"],
         )
-            .unwrap();
+        .unwrap();
 
         let mut stmt = db
             .prepare("SELECT id, label FROM foo WHERE id = ?")
@@ -3306,7 +3291,7 @@ mod test {
             // inserted separately)
             params![url0, url1, url2, "illegal"],
         )
-            .unwrap();
+        .unwrap();
 
         assert_eq!(get_url(db, 0).unwrap(), url0);
 
@@ -3332,7 +3317,7 @@ mod test {
         }
     }
 
-    use rusqlite::vtab::{dequote, parse_boolean, array};
+    use rusqlite::vtab::{array, dequote, parse_boolean};
     use std::rc::Rc;
 
     #[wasm_bindgen_test]
@@ -3361,7 +3346,6 @@ mod test {
         assert_eq!(Some(false), parse_boolean("false"));
     }
 
-
     #[wasm_bindgen_test]
     fn test_array_module() {
         let db = Connection::open_in_memory().unwrap();
@@ -3384,59 +3368,59 @@ mod test {
         }
         assert_eq!(1, Rc::strong_count(&ptr));
     }
-/*
-    use rusqlite::vtab::csvtab;
+    /*
+        use rusqlite::vtab::csvtab;
 
-    #[wasm_bindgen_test]
-    #[ignore]
-    fn test_csv_module() {
-        let db = Connection::open_in_memory().unwrap();
-        csvtab::load_module(&db).unwrap();
-        db.execute_batch("CREATE VIRTUAL TABLE vtab USING csv(filename='test.csv', header=yes)")
-            .unwrap();
-
-        {
-            let mut s = db.prepare("SELECT rowid, * FROM vtab").unwrap();
-            {
-                let headers = s.column_names();
-                assert_eq!(vec!["rowid", "colA", "colB", "colC"], headers);
-            }
-
-            let ids: Result<Vec<i32>> = s
-                .query(NO_PARAMS)
-                .unwrap()
-                .map(|row| row.get::<_, i32>(0))
-                .collect();
-            let sum = ids.unwrap().iter().sum::<i32>();
-            assert_eq!(sum, 15);
-        }
-        db.execute_batch("DROP TABLE vtab").unwrap();
-    }
-
-    #[wasm_bindgen_test]
-    #[ignore]
-    fn test_csv_cursor() {
-        let db = Connection::open_in_memory().unwrap();
-        csvtab::load_module(&db).unwrap();
-        db.execute_batch("CREATE VIRTUAL TABLE vtab USING csv(filename='test.csv', header=yes)")
-            .unwrap();
-
-        {
-            let mut s = db
-                .prepare(
-                    "SELECT v1.rowid, v1.* FROM vtab v1 NATURAL JOIN vtab v2 WHERE \
-                     v1.rowid < v2.rowid",
-                )
+        #[wasm_bindgen_test]
+        #[ignore]
+        fn test_csv_module() {
+            let db = Connection::open_in_memory().unwrap();
+            csvtab::load_module(&db).unwrap();
+            db.execute_batch("CREATE VIRTUAL TABLE vtab USING csv(filename='test.csv', header=yes)")
                 .unwrap();
 
-            let mut rows = s.query(NO_PARAMS).unwrap();
-            let row = rows.next().unwrap().unwrap();
-            assert_eq!(row.get_unwrap::<_, i32>(0), 2);
-        }
-        db.execute_batch("DROP TABLE vtab").unwrap();
-    }
+            {
+                let mut s = db.prepare("SELECT rowid, * FROM vtab").unwrap();
+                {
+                    let headers = s.column_names();
+                    assert_eq!(vec!["rowid", "colA", "colB", "colC"], headers);
+                }
 
-*/
+                let ids: Result<Vec<i32>> = s
+                    .query(NO_PARAMS)
+                    .unwrap()
+                    .map(|row| row.get::<_, i32>(0))
+                    .collect();
+                let sum = ids.unwrap().iter().sum::<i32>();
+                assert_eq!(sum, 15);
+            }
+            db.execute_batch("DROP TABLE vtab").unwrap();
+        }
+
+        #[wasm_bindgen_test]
+        #[ignore]
+        fn test_csv_cursor() {
+            let db = Connection::open_in_memory().unwrap();
+            csvtab::load_module(&db).unwrap();
+            db.execute_batch("CREATE VIRTUAL TABLE vtab USING csv(filename='test.csv', header=yes)")
+                .unwrap();
+
+            {
+                let mut s = db
+                    .prepare(
+                        "SELECT v1.rowid, v1.* FROM vtab v1 NATURAL JOIN vtab v2 WHERE \
+                         v1.rowid < v2.rowid",
+                    )
+                    .unwrap();
+
+                let mut rows = s.query(NO_PARAMS).unwrap();
+                let row = rows.next().unwrap().unwrap();
+                assert_eq!(row.get_unwrap::<_, i32>(0), 2);
+            }
+            db.execute_batch("DROP TABLE vtab").unwrap();
+        }
+
+    */
     use rusqlite::vtab::series;
 
     #[wasm_bindgen_test]
@@ -3460,7 +3444,6 @@ mod test {
         }
     }
 
-
     fn checked_memory_handle_time() -> Connection {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch("CREATE TABLE foo (t TEXT, i INTEGER, f FLOAT)")
@@ -3468,7 +3451,7 @@ mod test {
         db
     }
 
-            #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_timespec() {
         let db = checked_memory_handle_time();
 
@@ -3494,7 +3477,7 @@ mod test {
         }
     }
 
-            #[wasm_bindgen_test]
+    #[wasm_bindgen_test]
     fn test_sqlite_time_functions() {
         let db = checked_memory_handle_time();
         let result: Result<time::Timespec> =

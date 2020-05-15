@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use crate::ffi;
 use crate::{Connection, InnerConnection, Result};
+use wasm_bindgen::__rt::std::panic::AssertUnwindSafe;
 
 impl Connection {
     /// Set a busy handler that sleeps for a specified amount of time when a
@@ -51,7 +52,7 @@ impl Connection {
     pub fn busy_handler(&self, callback: Option<fn(i32) -> bool>) -> Result<()> {
         unsafe extern "C" fn busy_handler_callback(p_arg: *mut c_void, count: c_int) -> c_int {
             let handler_fn: fn(i32) -> bool = mem::transmute(p_arg);
-            if let Ok(true) = catch_unwind(|| handler_fn(count)) {
+            if let Ok(true) = catch_unwind(AssertUnwindSafe(|| handler_fn(count))) {
                 1
             } else {
                 0

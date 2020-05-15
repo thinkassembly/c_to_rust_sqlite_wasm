@@ -1,4 +1,3 @@
-
 fn main() {
     //println!("cargo:rerun-if-env-changed=BAR_LIB_DIR");
 

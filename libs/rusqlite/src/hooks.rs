@@ -8,6 +8,7 @@ use std::ptr;
 use crate::ffi;
 
 use crate::{Connection, InnerConnection};
+use wasm_bindgen::__rt::std::panic::AssertUnwindSafe;
 
 /// Action Codes
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -86,10 +87,10 @@ impl InnerConnection {
         where
             F: FnMut() -> bool,
         {
-            let r = catch_unwind(|| {
+            let r = catch_unwind( AssertUnwindSafe(|| {
                 let boxed_hook: *mut F = p_arg as *mut F;
                 (*boxed_hook)()
-            });
+            }));
             if let Ok(true) = r {
                 1
             } else {
@@ -135,10 +136,10 @@ impl InnerConnection {
         where
             F: FnMut(),
         {
-            let _ = catch_unwind(|| {
+            let _ = catch_unwind(AssertUnwindSafe(|| {
                 let boxed_hook: *mut F = p_arg as *mut F;
                 (*boxed_hook)();
-            });
+            }));
         }
 
         let free_rollback_hook = if hook.is_some() {
@@ -194,10 +195,10 @@ impl InnerConnection {
                 str::from_utf8_unchecked(c_slice)
             };
 
-            let _ = catch_unwind(|| {
+            let _ = catch_unwind(AssertUnwindSafe(|| {
                 let boxed_hook: *mut F = p_arg as *mut F;
                 (*boxed_hook)(action, db_name, tbl_name, row_id);
-            });
+            }));
         }
 
         let free_update_hook = if hook.is_some() {

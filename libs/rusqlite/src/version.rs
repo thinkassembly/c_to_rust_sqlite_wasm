@@ -9,6 +9,7 @@ pub fn version_number() -> i32 {
     unsafe { ffi::sqlite3_libversion_number() }
 }
 
+
 /// Returns the SQLite version as a string; e.g., `"3.16.2"` for version 3.16.2.
 ///
 /// See [`sqlite3_libversion()`](https://www.sqlite.org/c3ref/libversion.html).

@@ -80,6 +80,7 @@ use crate::context::set_result;
 use crate::types::{FromSql, FromSqlError, ToSql, ValueRef};
 
 use crate::{str_to_cstring, Connection, Error, InnerConnection, Result};
+use wasm_bindgen::__rt::std::panic::AssertUnwindSafe;
 
 unsafe fn report_error(ctx: *mut sqlite3_context, err: &Error) {
     // Extended constraint error codes were added in SQLite 3.7.16. We don't have
@@ -390,7 +391,7 @@ impl InnerConnection {
             F: FnMut(&Context<'_>) -> Result<T>,
             T: ToSql,
         {
-            let r = catch_unwind(|| {
+            let r = catch_unwind(AssertUnwindSafe(|| {
                 let boxed_f: *mut F = ffi::sqlite3_user_data(ctx) as *mut F;
                 assert!(!boxed_f.is_null(), "Internal error - null function pointer");
                 let ctx = Context {
@@ -398,7 +399,7 @@ impl InnerConnection {
                     args: slice::from_raw_parts(argv, argc as usize),
                 };
                 (*boxed_f)(&ctx)
-            });
+            }));
             let t = match r {
                 Err(_) => {
                     report_error(ctx, &Error::UnwindingPanic);
@@ -539,7 +540,7 @@ unsafe extern "C" fn call_boxed_step<A, D, T>(
         }
     };
 
-    let r = catch_unwind(|| {
+    let r = catch_unwind(AssertUnwindSafe(|| {
         let boxed_aggr: *mut D = ffi::sqlite3_user_data(ctx) as *mut D;
         assert!(
             !boxed_aggr.is_null(),
@@ -553,7 +554,7 @@ unsafe extern "C" fn call_boxed_step<A, D, T>(
             args: slice::from_raw_parts(argv, argc as usize),
         };
         (*boxed_aggr).step(&mut ctx, &mut **pac)
-    });
+    }));
     let r = match r {
         Err(_) => {
             report_error(ctx, &Error::UnwindingPanic);
@@ -585,7 +586,7 @@ unsafe extern "C" fn call_boxed_inverse<A, W, T>(
         }
     };
 
-    let r = catch_unwind(|| {
+    let r = catch_unwind(AssertUnwindSafe(|| {
         let boxed_aggr: *mut W = ffi::sqlite3_user_data(ctx) as *mut W;
         assert!(
             !boxed_aggr.is_null(),
@@ -596,7 +597,7 @@ unsafe extern "C" fn call_boxed_inverse<A, W, T>(
             args: slice::from_raw_parts(argv, argc as usize),
         };
         (*boxed_aggr).inverse(&mut ctx, &mut **pac)
-    });
+    }));
     let r = match r {
         Err(_) => {
             report_error(ctx, &Error::UnwindingPanic);
@@ -630,14 +631,14 @@ where
         None => None,
     };
 
-    let r = catch_unwind(|| {
+    let r = catch_unwind(AssertUnwindSafe(|| {
         let boxed_aggr: *mut D = ffi::sqlite3_user_data(ctx) as *mut D;
         assert!(
             !boxed_aggr.is_null(),
             "Internal error - null aggregate pointer"
         );
         (*boxed_aggr).finalize(a)
-    });
+    }));
     let t = match r {
         Err(_) => {
             report_error(ctx, &Error::UnwindingPanic);
@@ -674,14 +675,14 @@ where
         None => None,
     };
 
-    let r = catch_unwind(|| {
+    let r = catch_unwind(AssertUnwindSafe(|| {
         let boxed_aggr: *mut W = ffi::sqlite3_user_data(ctx) as *mut W;
         assert!(
             !boxed_aggr.is_null(),
             "Internal error - null aggregate pointer"
         );
         (*boxed_aggr).value(a)
-    });
+    }));
     let t = match r {
         Err(_) => {
             report_error(ctx, &Error::UnwindingPanic);

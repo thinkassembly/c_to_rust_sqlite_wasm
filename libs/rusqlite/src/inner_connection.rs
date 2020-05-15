@@ -88,7 +88,7 @@ impl InnerConnection {
 
         unsafe {
             let mut db = MaybeUninit::uninit();
-            let r = ffi::sqlite3_open_v2(c_path.as_ptr(), db.as_mut_ptr(), flags.bits(), z_vfs);
+            let r = ffi::sqlite3_open(c_path.as_ptr(), db.as_mut_ptr(), flags.bits(), z_vfs);
             let db: *mut ffi::sqlite3 = db.assume_init();
             if r != ffi::SQLITE_OK {
                 let e = if db.is_null() {
@@ -239,26 +239,9 @@ impl InnerConnection {
         let (c_sql, len, _) = str_for_sqlite(sql.as_bytes())?;
         let mut c_tail = MaybeUninit::uninit();
         let r = unsafe {
-            if cfg!(feature = "unlock_notify") {
-                let mut rc;
-                loop {
-                    rc = ffi::sqlite3_prepare_v2(
-                        self.db(),
-                        c_sql,
-                        len,
-                        c_stmt.as_mut_ptr(),
-                        c_tail.as_mut_ptr(),
-                    );
-                    if !unlock_notify::is_locked(self.db, rc) {
-                        break;
-                    }
-                    rc = unlock_notify::wait_for_unlock_notify(self.db);
-                    if rc != ffi::SQLITE_OK {
-                        break;
-                    }
-                }
-                rc
-            } else {
+
+
+
                 ffi::sqlite3_prepare_v2(
                     self.db(),
                     c_sql,
@@ -266,8 +249,9 @@ impl InnerConnection {
                     c_stmt.as_mut_ptr(),
                     c_tail.as_mut_ptr(),
                 )
-            }
+
         };
+        println!("R {:?}",r);
         // If there is an error, *ppStmt is set to NULL.
         self.decode_result(r)?;
         // If the input text contains no SQL (if the input is an empty string or a
@@ -357,7 +341,6 @@ fn ensure_safe_sqlite_threading_mode() -> Result<()> {
     //    mode. This will fail if someone else has already initialized SQLite
     //    even if they initialized it safely. That's not ideal either, which is
     //    why we expose bypass_sqlite_initialization    above.
-    if version_number() >= 3_007_000 {
         const SQLITE_SINGLETHREADED_MUTEX_MAGIC: usize = 8;
         let is_singlethreaded = unsafe {
             let mutex_ptr = ffi::sqlite3_mutex_alloc(0);
@@ -370,28 +353,5 @@ fn ensure_safe_sqlite_threading_mode() -> Result<()> {
         } else {
             Ok(())
         }
-    } else {
-        SQLITE_INIT.call_once(|| {
-            if BYPASS_SQLITE_INIT.load(Ordering::Relaxed) {
-                return;
-            }
 
-            unsafe {
-                let msg = "\
-Could not ensure safe initialization of SQLite.
-To fix this, either:
-* Upgrade SQLite to at least version 3.7.0
-* Ensure that SQLite has been initialized in Multi-thread or Serialized mode and call
-  rusqlite::bypass_sqlite_initialization() prior to your first connection attempt.";
-
-                if ffi::sqlite3_config(ffi::SQLITE_CONFIG_MULTITHREAD) != ffi::SQLITE_OK {
-                    panic!(msg);
-                }
-                if ffi::sqlite3_initialize() != ffi::SQLITE_OK {
-                    panic!(msg);
-                }
-            }
-        });
-        Ok(())
-    }
 }

@@ -46,6 +46,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08c48aae112d48ed9f069b33538ea9e3e90aa263cfa3d1c24309612b1f7472de"
 
 [[package]]
+name = "c2rust-bitfields"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb34f0c0ace43530b2df7f18bc69ee0c4082158aa451ece29602f8c841e73764"
+dependencies = [
+ "c2rust-bitfields-derive",
+]
+
+[[package]]
+name = "c2rust-bitfields-derive"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3dd1601a7b828ab874d890e5a895563ca8ad485bdd3d2a359f148c8b72537241"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "c_to_rust_sqlite_wasm"
+version = "0.1.0"
+dependencies = [
+ "byteorder",
+ "cc",
+ "chrono",
+ "fallible-iterator",
+ "fallible-streaming-iterator",
+ "js-sys",
+ "lazy_static",
+ "libc-sys",
+ "libsqlite3-sys",
+ "regex",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
+ "time",
+ "unicase",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-test",
+ "wasm_println",
+ "wee_alloc",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -157,9 +203,9 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "libc"
-version = "0.2.68"
+version = "0.2.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dea0c0405123bba743ee3f91f49b1c7cfb684eef0da0a50110f758ccf24cdff0"
+checksum = "3baa92041a6fec78c687fa0cc2b3fae8884f743d672cf551bed1d6dac6988d0f"
 
 [[package]]
 name = "libc-sys"
@@ -173,7 +219,9 @@ dependencies = [
 name = "libsqlite3-sys"
 version = "0.19.0"
 dependencies = [
+ "c2rust-bitfields",
  "cc",
+ "libc-sys",
 ]
 
 [[package]]
@@ -368,32 +416,6 @@ dependencies = [
  "time",
  "url",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "rust_sqlite_wasm"
-version = "0.1.0"
-dependencies = [
- "byteorder",
- "cc",
- "chrono",
- "fallible-iterator",
- "fallible-streaming-iterator",
- "js-sys",
- "lazy_static",
- "libc-sys",
- "libsqlite3-sys",
- "regex",
- "rusqlite",
- "serde_json",
- "tempfile",
- "time",
- "unicase",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-test",
- "wasm_println",
- "wee_alloc",
 ]
 
 [[package]]

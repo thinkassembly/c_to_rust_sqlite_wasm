@@ -1,0 +1,26 @@
+# Copyright 2017 the authors. See the 'Copyright and license' section of the
+# README.md file at the top-level directory of this repository.
+#
+# Licensed under the Apache License, Version 2.0 (the LICENSE-APACHE file) or
+# the MIT license (the LICENSE-MIT file) at your option. This file may not be
+# copied, modified, or distributed except according to those terms.
+
+[package]
+name = "wee-alloc-malloc"
+version = "0.1.0"
+authors = ["Joshua Liebow-Feeser <hello@joshlf.com>"]
+license = "Apache-2.0/MIT"
+description = "A tool to implement the C malloc API using a Rust allocator."
+
+keywords = ["allocator", "malloc", "bindings", "C", "ffi"]
+categories = ["external-ffi-bindings", "memory-management", "no-std"]
+
+readme = "README.md"
+documentation = "https://docs.rs/malloc-bind"
+repository = "https://github.com/ezrosent/allocators-rs/tree/master/malloc-bind"
+
+exclude = ["appveyor.sh", "travis.sh"]
+
+[dependencies]
+lazy_static = {  features = ["spin_no_std"] }
+wee_alloc = { version = "0.4.5", optional = false}

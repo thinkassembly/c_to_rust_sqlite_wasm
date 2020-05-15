@@ -555,20 +555,7 @@ impl Statement<'_> {
         Ok(())
     }
 
-    /// Returns a string containing the SQL text of prepared statement with
-    /// bound parameters expanded.
-    pub fn expanded_sql(&self) -> Option<String> {
-        unsafe {
-            match self.stmt.expanded_sql() {
-                Some(s) => {
-                    let sql = str::from_utf8_unchecked(s.to_bytes()).to_owned();
-                    ffi::sqlite3_free(s.as_ptr() as *mut _);
-                    Some(sql)
-                }
-                _ => None,
-            }
-        }
-    }
+
 
     /// Get the value for one of the status counters for this statement.
     pub fn get_status(&self, status: StatementStatus) -> i32 {
